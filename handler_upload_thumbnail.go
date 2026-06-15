@@ -28,9 +28,89 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	video, err := cfg.db.GetVideo(videoID)
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to retrieve video", err)
+		return
+	}
+
+	if video.UserID != userID {
+		respondWithError(w, http.StatusUnauthorized, "Not your video", fmt.Errorf("Video %s does not belong to this user", videoID.String()))
+		return
+	}
+
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
+	maxSize := 10 << 20
+	if r.ContentLength > int64(maxSize) {
+		respondWithError(w, http.StatusBadRequest, "Invalid upload size (>10MB)", fmt.Errorf("Invalid upload size, max size is %d, found %d", maxSize, r.ContentLength))
+		return
+	}
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	err = r.ParseMultipartForm(int64(maxSize))
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to parse data", err)
+		return
+	}
+
+	fileHeaders, present := r.MultipartForm.File["thumbnail"]
+
+	if !present {
+		respondWithError(w, http.StatusBadRequest, "No thumbnail field submitted", fmt.Errorf("No thumbnail file provided"))
+		return
+	}
+
+	if len(fileHeaders) > 1 {
+		respondWithError(w, http.StatusBadRequest, "Too many thumbnail files submitted", fmt.Errorf("To many thumbnail files submitted: expected 1, found %d", len(fileHeaders)))
+		return
+	}
+
+	fileHeader := fileHeaders[0]
+
+	if fileHeader.Size > r.ContentLength {
+		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail size", fmt.Errorf("Expected thumbnail size to be at most %d, found %d", r.ContentLength, fileHeader.Size))
+		return
+	}
+
+	mediaType := fileHeader.Header.Get("Content-Type")
+
+	if mediaType == "" {
+		respondWithError(w, http.StatusBadRequest, "No thumbnail MIME type specified", fmt.Errorf("No thumbnail MIME type specified"))
+		return
+	}
+
+	file, err := fileHeader.Open()
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to open thumbnail file", err)
+		return
+	}
+
+	defer file.Close()
+
+	data := make([]byte, fileHeader.Size)
+	n, err := file.Read(data)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error while reading thumbnail data", err)
+		return
+	}
+
+	if n != int(fileHeader.Size) {
+		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail size", fmt.Errorf("Expected thumbnail size to be %d, read %d", fileHeader.Size, n))
+		return
+	}
+
+	newUrl := fmt.Sprintf("http://localhost:%s/api/thumbnails/%s", cfg.port, videoID.String())
+	video.ThumbnailURL = &newUrl
+	cfg.db.UpdateVideo(video)
+
+	videoThumbnails[videoID] = thumbnail{
+		data:      data,
+		mediaType: mediaType,
+	}
+
+	respondWithJSON(w, http.StatusOK, video)
 }
