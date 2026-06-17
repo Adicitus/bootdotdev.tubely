@@ -21,6 +21,8 @@ type apiConfig struct {
 	s3Bucket         string
 	s3Region         string
 	s3CfDistribution string
+	protocol         string
+	hostname         string
 	port             string
 }
 
@@ -79,6 +81,17 @@ func main() {
 		log.Fatal("S3_CF_DISTRO environment variable is not set")
 	}
 
+	protocol := os.Getenv("PROTOCOL")
+	if protocol == "" {
+		log.Print("PROTOCOL environment variable is not set, using http")
+		protocol = "http"
+	}
+
+	hostname := os.Getenv("HOSTNAME")
+	if hostname == "" {
+		log.Fatal("HOSTNAME environment variable is not set")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		log.Fatal("PORT environment variable is not set")
@@ -93,6 +106,8 @@ func main() {
 		s3Bucket:         s3Bucket,
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
+		protocol:         protocol,
+		hostname:         hostname,
 		port:             port,
 	}
 
