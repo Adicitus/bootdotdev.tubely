@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -78,10 +79,26 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	mediaType := fileHeader.Header.Get("Content-Type")
+	mediaTypeRaw := fileHeader.Header.Get("Content-Type")
 
-	if mediaType == "" {
+	if mediaTypeRaw == "" {
 		respondWithError(w, http.StatusBadRequest, "No thumbnail MIME type specified", fmt.Errorf("No thumbnail MIME type specified"))
+		return
+	}
+
+	mediaType, _, err := mime.ParseMediaType(mediaTypeRaw)
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Malformed thumbnail MIME type", err)
+		return
+	}
+
+	switch mediaType {
+	case "image/png":
+	case "image/jpeg":
+		break
+	default:
+		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail type", fmt.Errorf("Expected image/png or image/jpeg, found %s", mediaType))
 		return
 	}
 
@@ -108,11 +125,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 	type_parts := strings.Split(mediaType, "/")
-
-	if len(type_parts) != 2 {
-		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail type", nil)
-		return
-	}
 
 	file_ending := type_parts[1]
 	file_path := path.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, file_ending))
