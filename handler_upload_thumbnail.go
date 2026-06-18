@@ -1,9 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path"
+	"strings"
 
 	"github.com/Adicitus/bootdotdev.tubely/internal/auth"
 	"github.com/google/uuid"
@@ -104,9 +107,24 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dataB64s := base64.StdEncoding.EncodeToString(data)
+	type_parts := strings.Split(mediaType, "/")
 
-	newUrl := fmt.Sprintf("data:%s;base64,%s", mediaType, dataB64s)
+	if len(type_parts) != 2 {
+		respondWithError(w, http.StatusBadRequest, "Invalid thumbnail type", nil)
+		return
+	}
+
+	file_ending := type_parts[1]
+	file_path := path.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, file_ending))
+
+	err = os.WriteFile(file_path, data, fs.ModePerm)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to save the thumbnail", err)
+		return
+	}
+
+	newUrl := fmt.Sprintf("%s://%s:%s/assets/%s.%s", cfg.protocol, cfg.hostname, cfg.port, videoIDString, file_ending)
 	video.ThumbnailURL = &newUrl
 	cfg.db.UpdateVideo(video)
 
