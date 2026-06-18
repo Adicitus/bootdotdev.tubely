@@ -257,11 +257,20 @@ function viewVideo(video) {
   document.getElementById('video-description-display').textContent = video.description;
 
   const thumbnailImg = document.getElementById('thumbnail-image');
-  if (!video.thumbnail_url) {
-    thumbnailImg.style.display = 'none';
-  } else {
-    thumbnailImg.style.display = 'block';
-    thumbnailImg.src = video.thumbnail_url + "?v=" + Date.now();
+  thumbnailImg.style.display = 'none';
+  if (video.thumbnail_url) {
+    // Setting src to empty triggers the error event on the next redraw
+    thumbnailImg.src = "";
+    thumbnailImg.addEventListener("error", function() {
+      // This error event should be called in response to the empty .src attribute.
+
+      // TODO: There should probably be some error handling here, in case the link is actually broken for some reason.
+
+      thumbnailImg.src = video.thumbnail_url; // Since we are going from an empty .src to the actual URL, this should cause the browser to issue a request for the URL.
+      thumbnailImg.style.display = 'block'; // Displaying the thumbnail, since we should have something to show at this point.
+
+      thumbnailImg.removeEventListener("error", this)
+    })
   }
 
   const videoPlayer = document.getElementById('video-player');
