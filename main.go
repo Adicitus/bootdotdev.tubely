@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/Adicitus/bootdotdev.tubely/internal/auth"
 	"github.com/Adicitus/bootdotdev.tubely/internal/database"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -23,11 +27,32 @@ type apiConfig struct {
 	protocol         string
 	hostname         string
 	port             string
+	s3Client         *s3.Client
 }
 
 type thumbnail struct {
 	data      []byte
 	mediaType string
+}
+
+func (cfg *apiConfig) secureAccess(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT", err)
+			return
+		}
+
+		userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+		if err != nil {
+			respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
+			return
+		}
+
+		r.Header.Set("X-Tubely-UserID", userID.String())
+
+		handler(w, r)
+	}
 }
 
 func main() {
@@ -94,6 +119,15 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	s3Config, err := config.LoadDefaultConfig(
+		context.Background(),
+		config.WithRegion(s3Region),
+	)
+
+	if err != nil {
+		log.Fatal("Failed to load AWS config:", err)
+	}
+
 	cfg := apiConfig{
 		db:               db,
 		jwtSecret:        jwtSecret,
@@ -106,6 +140,7 @@ func main() {
 		protocol:         protocol,
 		hostname:         hostname,
 		port:             port,
+		s3Client:         s3.NewFromConfig(s3Config),
 	}
 
 	err = cfg.ensureAssetsDir()
@@ -124,14 +159,14 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", cfg.handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", cfg.handlerRevoke)
 
-	mux.HandleFunc("POST /api/users", cfg.handlerUsersCreate)
+	mux.HandleFunc("POST /api/users", cfg.secureAccess(cfg.handlerUsersCreate))
 
-	mux.HandleFunc("POST /api/videos", cfg.handlerVideoMetaCreate)
-	mux.HandleFunc("POST /api/thumbnail_upload/{videoID}", cfg.handlerUploadThumbnail)
-	mux.HandleFunc("POST /api/video_upload/{videoID}", cfg.handlerUploadVideo)
+	mux.HandleFunc("POST /api/videos", cfg.secureAccess(cfg.handlerVideoMetaCreate))
+	mux.HandleFunc("POST /api/thumbnail_upload/{videoID}", cfg.secureAccess(cfg.handlerUploadThumbnail))
+	mux.HandleFunc("POST /api/video_upload/{videoID}", cfg.secureAccess(cfg.handlerUploadVideo))
 	mux.HandleFunc("GET /api/videos", cfg.handlerVideosRetrieve)
 	mux.HandleFunc("GET /api/videos/{videoID}", cfg.handlerVideoGet)
-	mux.HandleFunc("DELETE /api/videos/{videoID}", cfg.handlerVideoMetaDelete)
+	mux.HandleFunc("DELETE /api/videos/{videoID}", cfg.secureAccess(cfg.handlerVideoMetaDelete))
 
 	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)
 

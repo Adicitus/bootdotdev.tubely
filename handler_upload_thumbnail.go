@@ -11,7 +11,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/Adicitus/bootdotdev.tubely/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -23,16 +22,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	token, err := auth.GetBearerToken(r.Header)
-	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT", err)
-		return
-	}
+	userID, err := uuid.Parse(r.Header.Get("X-Tubely-UserID"))
 
-	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
-		return
+		respondWithError(w, http.StatusInternalServerError, "failed to retrieve X-Tubely-UserID header", err)
 	}
 
 	video, err := cfg.db.GetVideo(videoID)
