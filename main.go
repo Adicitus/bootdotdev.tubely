@@ -30,11 +30,6 @@ type apiConfig struct {
 	s3Client         *s3.Client
 }
 
-type thumbnail struct {
-	data      []byte
-	mediaType string
-}
-
 func (cfg *apiConfig) secureAccess(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, err := auth.GetBearerToken(r.Header)
